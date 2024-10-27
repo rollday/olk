@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>音乐播放器</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            text-align: center;
+            height: 100vh; /* 使页面高度占满视口 */
+            margin: 0; /* 去掉默认的 margin */
+            display: flex;
+            justify-content: center;
+            align-items: center; /* 垂直居中 */
+        }
+        .player {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            display: inline-block;
+            max-width: 400px;
+            width: 100%; /* 使播放器宽度自适应 */
+            height: 100%; /* 使播放器高度自适应 */
+            overflow: hidden; /* 防止内容溢出 */
+        }
+        .cover {
+            width: 200px;
+            height: 200px;
+            margin-bottom: 20px;
+        }
+        .progress {
+            width: 100%;
+            height: 5px;
+            background: #e0e0e0;
+            border-radius: 5px;
+            margin: 10px 0;
+            cursor: pointer; /* Allow clicking on progress bar */
+        }
+        .progress-bar {
+            height: 100%;
+            width: 0;
+            background: #76c7c0;
+            border-radius: 5px;
+        }
+        #lyrics {
+            margin-top: 20px;
+            font-size: 16px;
+            line-height: 1.5;
+            max-height: calc(100vh - 500px); /* 调整歌词区域的最大高度 */
+            overflow-y: auto; /* 添加垂直滚动条 */
+            text-align: left; /* 左对齐 */
+            scroll-behavior: smooth; /* 平滑滚动效果 */
+        }
+        .lyric-line {
+            opacity: 0.5; /* 默认歌词透明度 */
+            transition: opacity 0.3s; /* 过渡效果 */
+            cursor: pointer; /* 鼠标悬停时显示为手形 */
+        }
+        .current-lyric {
+            opacity: 1; /* 当前歌词完全不透明 */
+            font-weight: bold; /* 加粗当前歌词 */
+        }
+        .translation {
+            color: #76c7c0; /* 翻译部分颜色 */
+            font-size: 14px; /* 翻译字体大小 */
+            margin-left: 10px; /* 翻译和歌词之间的间距 */
+            display: block; /* 使翻译在新行中显示 */
+            margin-top: 5px; /* 上边距 */
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        .btn {
+            padding: 10px 15px;
+            margin: 5px;
+            background: #76c7c0;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            cursor: pointer;
+            transition: background 0.3s;
+            font-size: 18px; /* 增加按钮字体大小 */
+        }
+        .btn:hover {
+            background: #5ba7a2;
+        }
+        .timer {
+            font-size: 14px; /* 时间显示字体大小 */
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="player">
+    <img class="cover" src="https://cdn.rollday.site/resource/cover.jpg" alt="歌曲封面">
+    <audio id="audio">
+        <source src="https://cdn.rollday.site/resource/OneLastKiss.flac" type="audio/flac">
+        您的浏览器不支持音频元素。
+    </audio>
+    <div class="controls">
+        <button id="play-pause" class="btn">▶</button>
+    </div>
+    <div class="timer" id="timer">00:00 / 00:00</div> <!-- 新增的时间显示 -->
+    <div class="progress" id="progress">
+        <div class="progress-bar" id="progress-bar"></div>
+    </div>
+    <div id="lyrics">正在加载歌词...</div>
+</div>
+
+<script>
+    const audio = document.getElementById('audio');
+    const progressBar = document.getElementById('progress-bar');
+    const lyricsDiv = document.getElementById('lyrics');
+    const playPauseButton = document.getElementById('play-pause');
+    const progressContainer = document.getElementById('progress');
+    const timer = document.getElementById('timer'); // 获取时间显示元素
+
+    let lyrics = [];
+    let currentLine = 0;
+    let scrollTimeout; // 定时器用于延迟回正
+    let isScrolling = false; // 滚动标志
+    let isPlaying = false; // 播放状态标志
+
+    playPauseButton.addEventListener('click', () => {
+        if (isPlaying) {
+            audio.pause();
+            playPauseButton.innerHTML = '▶'; // 显示播放图标
+        } else {
+            audio.play();
+            playPauseButton.innerHTML = '❚❚'; // 显示暂停图标
+        }
+        isPlaying = !isPlaying; // 切换播放状态
+    });
+
+    audio.addEventListener('timeupdate', () => {
+        const percent = (audio.currentTime / audio.duration) * 100;
+        progressBar.style.width = percent + '%';
+        updateTimer(); // 更新当前时间和总时间
+        if (!isScrolling) {
+            highlightCurrentLyric(audio.currentTime);
+            scrollToCurrentLyric(); // 歌词自动居中
+        }
+    });
+
+    progressContainer.addEventListener('click', (event) => {
+        const percent = (event.offsetX / progressContainer.clientWidth);
+        audio.currentTime = percent * audio.duration;
+    });
+
+    function updateTimer() {
+        const currentTime = formatTime(audio.currentTime);
+        const duration = formatTime(audio.duration);
+        timer.innerText = `${currentTime} / ${duration}`; // 更新显示内容
+    }
+
+    function formatTime(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${padZero(minutes)}:${padZero(secs)}`;
+    }
+
+    function padZero(number) {
+        return number < 10 ? '0' + number : number;
+    }
+
+    function highlightCurrentLyric(currentTime) {
+        clearPreviousLyricsHighlight();
+
+        while (currentLine < lyrics.length - 1 && currentTime >= lyrics[currentLine + 1][0]) {
+            currentLine++;
+        }
+
+        const nextLyric = lyricsDiv.querySelector(`.lyric-line[data-index="${currentLine}"]`);
+        if (nextLyric) {
+            nextLyric.classList.add('current-lyric');
+            nextLyric.style.opacity = '1';
+        }
+    }
+
+    function clearPreviousLyricsHighlight() {
+        for (let i = 0; i < lyrics.length; i++) {
+            const previousLyric = lyricsDiv.querySelector(`.lyric-line[data-index="${i}"]`);
+            if (previousLyric) {
+                previousLyric.classList.remove('current-lyric');
+                previousLyric.style.opacity = '0.5';
+            }
+        }
+    }
+
+    lyricsDiv.addEventListener('scroll', () => {
+        clearPreviousLyricsHighlight();
+        isScrolling = true;
+        highlightCurrentLyric(audio.currentTime);
+
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(() => {
+            isScrolling = false;
+            scrollToCurrentLyric();
+        }, 1000);
+    });
+
+    function scrollToCurrentLyric() {
+        const nextLyric = lyricsDiv.querySelector(`.lyric-line[data-index="${currentLine}"]`);
+        if (nextLyric) {
+            lyricsDiv.scrollTop = nextLyric.offsetTop - lyricsDiv.offsetTop - (lyricsDiv.clientHeight / 2) + (nextLyric.clientHeight / 2);
+        }
+    }
+
+    lyricsDiv.addEventListener('click', (event) => {
+        const line = event.target.closest('.lyric-line');
+        if (line) {
+            const index = line.getAttribute('data-index');
+            audio.currentTime = lyrics[index][0];
+            currentLine = parseInt(index);
+            clearPreviousLyricsHighlight();
+            highlightCurrentLyric(audio.currentTime);
+            scrollToCurrentLyric();
+        }
+    });
+
+    fetch('lyrics.json')
+        .then(response => response.json())
+        .then(data => {
+            lyrics = parseLyrics(data.lyrics);
+            lyricsDiv.innerHTML = lyrics.map(([, text, translation], index) => 
+                `<div class="lyric-line" data-index="${index}">
+                    ${text} 
+                    <span class="translation">${translation ? translation : ''}</span>
+                </div>
+                ${!translation ? '<br>' : ''}` // 如果没有翻译，添加一个空行
+            ).join('');
+            if (lyrics.length > 0) {
+                highlightCurrentLyric(0);
+            }
+        })
+        .catch(error => {
+            lyricsDiv.innerText = '歌词加载失败。';
+            console.error('Error loading lyrics:', error);
+        });
+
+    function parseLyrics(data) {
+        return data.map(item => [convertTimeToSeconds(item.time), item.text, item.translation]);
+    }
+
+    function convertTimeToSeconds(time) {
+        const [minutes, seconds] = time.split(':').map(Number);
+        return minutes * 60 + seconds;
+    }
+</script>
+
+</body>
+</html>
